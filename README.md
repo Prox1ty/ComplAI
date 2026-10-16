@@ -40,7 +40,7 @@ npm run dev:mock        # http://localhost:5173
 ```bash
 python3.11 -m venv .venv && source .venv/bin/activate
 pip install -r backend/requirements.txt
-cp .env.example .env            # add ANTHROPIC_API_KEY (and TAVILY_API_KEY if you have one)
+cp .env.example .env            # add GROQ_API_KEY (free at console.groq.com), and TAVILY_API_KEY if you have one
 
 # seed the global corpus (FATF Recommendations, Basel Core Principles, Basel AML guidelines)
 python scripts/seed_corpus.py --download
@@ -50,6 +50,8 @@ uvicorn backend.main:app --reload --port 8000
 # second terminal
 cd frontend && npm install && npm run dev
 ```
+
+Never put real keys in `.env.example`: it is committed to git. Only `.env` is ignored.
 
 Set `FAKE_PIPELINE=1` to exercise the real API and SSE stream without any LLM key; the backend replays the mock report.
 

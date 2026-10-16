@@ -85,6 +85,7 @@ class Orchestrator:
 
     async def _pipeline(self, usage: llm.RunUsage, t0: float) -> tuple[RunContext, Result]:
         inp = self.inputs
+        llm.check_config()
         as_of, tz = compute_as_of(inp.timezone)
         inp.timezone = tz
         chain = resolve_jurisdictions(inp.country, inp.region, inp.city)
@@ -119,6 +120,10 @@ class Orchestrator:
 
         # P4 analyse ------------------------------------------------------------
         drafts = await gap.pass_a(ctx)
+        if usage.calls == 0 and usage.cache_hits == 0 and ctx.debug.get("errors"):
+            # Every model call failed: report the cause instead of an empty "no gaps" report.
+            first = ctx.debug["errors"][0].get("error", "unknown error")
+            raise ValueError(f"The language model could not be used, so the policy was not analysed. First error: {first}")
         cov = await gap.pass_b(ctx)
         drafts.extend(cov.drafts)
         await self.emit("analysing", "completed", f"{len(drafts)} candidate finding(s)", 0.7)

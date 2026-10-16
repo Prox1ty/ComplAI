@@ -37,9 +37,11 @@ def _float(name: str, default: float) -> float:
 @dataclass
 class Settings:
     # LLM
-    llm_provider: str = field(default_factory=lambda: os.getenv("LLM_PROVIDER", "anthropic"))
+    llm_provider: str = field(default_factory=lambda: os.getenv("LLM_PROVIDER", "anthropic").strip().lower())
     anthropic_api_key: str = field(default_factory=lambda: os.getenv("ANTHROPIC_API_KEY", ""))
     openai_api_key: str = field(default_factory=lambda: os.getenv("OPENAI_API_KEY", ""))
+    groq_api_key: str = field(default_factory=lambda: os.getenv("GROQ_API_KEY", ""))
+    reasoning_effort: str = field(default_factory=lambda: os.getenv("REASONING_EFFORT", "low"))
     openai_base_url: str = field(default_factory=lambda: os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1"))
     small_model: str = field(default_factory=lambda: os.getenv("SMALL_MODEL", "claude-haiku-5-5"))
     large_model: str = field(default_factory=lambda: os.getenv("LARGE_MODEL", "claude-sonnet-5-5"))

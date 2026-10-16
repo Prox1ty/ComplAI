@@ -1,4 +1,5 @@
 import asyncio
+import json
 
 import pytest
 from pydantic import BaseModel
@@ -119,3 +120,50 @@ async def test_stress_30_calls_stay_under_tpm(monkeypatch):
         assert window <= cap, (t0, window)
     # ~45k tokens at 8k/min must take more than 4 virtual minutes
     assert max(t for t, _ in admitted) > 4 * 60
+
+
+async def test_unknown_provider_is_a_config_error(monkeypatch):
+    from backend.config import settings
+
+    monkeypatch.setattr(settings, "llm_provider", "nonsense")
+    with pytest.raises(llm.LLMConfigError):
+        await llm.call("small", "s", "u", 20, Out, use_cache=False)
+    assert not issubclass(llm.LLMConfigError, llm.LLMError)  # agents must not swallow it
+
+
+async def test_groq_request_shape_and_json_failure_repair(monkeypatch):
+    import httpx
+
+    from backend.config import settings
+
+    monkeypatch.setattr(settings, "llm_provider", "groq")
+    monkeypatch.setattr(settings, "groq_api_key", "gsk_test")
+    monkeypatch.setattr(settings, "openai_base_url", "https://api.openai.com/v1")
+    monkeypatch.setattr(settings, "small_model", "openai/gpt-oss-20b")
+    sent = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        sent.append((str(request.url), request.headers["authorization"], body))
+        if len(sent) == 1:
+            return httpx.Response(400, json={"error": {"code": "json_validate_failed", "failed_generation": '{"value": "x"'}})
+        return httpx.Response(200, json={"choices": [{"message": {"content": '{"value": 4}'}}],
+                                         "usage": {"prompt_tokens": 10, "completion_tokens": 3}})
+
+    real_client = httpx.AsyncClient
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kw: real_client(transport=httpx.MockTransport(handler)))
+    out = await llm.call("small", "Return JSON", "u", 50, Out, use_cache=False)
+    assert out.value == 4 and len(sent) == 2  # failed generation went through the repair step
+    url, auth, body = sent[0]
+    assert url == "https://api.groq.com/openai/v1/chat/completions"
+    assert auth == "Bearer gsk_test"
+    assert body["reasoning_effort"] == "low" and body["include_reasoning"] is False
+
+
+async def test_long_retry_after_fails_fast(monkeypatch):
+    async def provider(*a):
+        raise RetryableError("429", retry_after=3600)
+
+    llm.set_provider(provider)
+    with pytest.raises(llm.LLMUnavailable, match="daily quota"):
+        await llm.call("small", "s", "u", 20, Out, use_cache=False)

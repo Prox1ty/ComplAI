@@ -45,6 +45,14 @@ class LLMUnavailable(LLMError):
     """Provider unreachable / rate limited after all retries; callers degrade."""
 
 
+class LLMConfigError(ValueError):
+    """Setup problem (unknown provider, missing/invalid key, unknown model).
+
+    Deliberately *not* an ``LLMError``: agents catch ``LLMError`` and degrade,
+    but a configuration error must stop the run with a clear message instead
+    of producing an empty report."""
+
+
 class LLMSchemaError(LLMError):
     """Output failed validation twice; callers skip the item and log it."""
 
@@ -247,6 +255,8 @@ async def _anthropic(model: str, system: str, user: str, max_tokens: int, temper
     except anthropic.APIStatusError as e:
         if e.status_code >= 500 or e.status_code in (408, 409, 429, 529):
             raise RetryableError(f"status {e.status_code}", _retry_after(e.response)) from e
+        if e.status_code in (401, 403, 404):
+            raise LLMConfigError(f"Anthropic rejected the request (HTTP {e.status_code}): {e.message}") from e
         raise LLMError(f"anthropic error {e.status_code}: {e.message}") from e
     except (anthropic.APIConnectionError, anthropic.APITimeoutError) as e:
         raise RetryableError("connection error") from e
@@ -256,33 +266,85 @@ async def _anthropic(model: str, system: str, user: str, max_tokens: int, temper
     return Completion(text=text, tokens_in=tin, tokens_out=u.output_tokens or 0)
 
 
+GROQ_BASE_URL = "https://api.groq.com/openai/v1"
+MAX_RETRY_AFTER = 120.0  # longer waits (e.g. a daily quota) fail fast instead of hanging the run
+
+
+def _is_groq() -> bool:
+    return settings.llm_provider == "groq" or "api.groq.com" in settings.openai_base_url
+
+
+def _compat_base_url() -> str:
+    if settings.llm_provider == "groq" and "api.openai.com" in settings.openai_base_url:
+        return GROQ_BASE_URL
+    return settings.openai_base_url.rstrip("/")
+
+
+def _compat_key() -> str:
+    if _is_groq():
+        return settings.groq_api_key or settings.openai_api_key
+    return settings.openai_api_key
+
+
+def _is_reasoning_model(model: str) -> bool:
+    return "gpt-oss" in model
+
+
 async def _openai_compatible(model: str, system: str, user: str, max_tokens: int, temperature: float) -> Completion:
     import httpx
 
-    body = {
+    key = _compat_key()
+    if not key:
+        raise LLMConfigError(
+            "No API key set. Put your key in .env as GROQ_API_KEY (or OPENAI_API_KEY) and restart the backend."
+        )
+    body: dict[str, Any] = {
         "model": model,
         "max_tokens": max_tokens,
         "temperature": temperature,
         "response_format": {"type": "json_object"},
         "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
     }
-    headers = {"Authorization": f"Bearer {settings.openai_api_key}"}
+    if _is_reasoning_model(model):
+        # gpt-oss thinks before answering; keep that short so it does not eat
+        # the output budget, and do not return the reasoning text.
+        body["reasoning_effort"] = settings.reasoning_effort
+        if _is_groq():
+            body["include_reasoning"] = False
+    headers = {"Authorization": f"Bearer {key}"}
     try:
         async with httpx.AsyncClient(timeout=120) as client:
-            r = await client.post(f"{settings.openai_base_url.rstrip('/')}/chat/completions", json=body, headers=headers)
+            r = await client.post(f"{_compat_base_url()}/chat/completions", json=body, headers=headers)
     except httpx.HTTPError as e:
         raise RetryableError(f"connection error: {e}") from e
     if r.status_code == 429 or r.status_code >= 500:
-        raise RetryableError(f"status {r.status_code}", _retry_after(r))
+        raise RetryableError(f"status {r.status_code}: {r.text[:200]}", _retry_after(r))
+    if r.status_code in (401, 403):
+        raise LLMConfigError(f"The model provider rejected the API key (HTTP {r.status_code}). Check the key in .env.")
+    if r.status_code == 404 or (r.status_code == 400 and "model_not_found" in r.text):
+        raise LLMConfigError(f"Model '{model}' was not found at the provider. Check SMALL_MODEL / LARGE_MODEL in .env.")
     if r.status_code >= 400:
+        err = _error_body(r)
+        failed = err.get("failed_generation")
+        if failed is not None or err.get("code") == "json_validate_failed":
+            # JSON mode rejected the output: hand it back so the repair step can fix it.
+            return Completion(text=str(failed or ""), tokens_in=0, tokens_out=0)
         raise LLMError(f"provider error {r.status_code}: {r.text[:300]}")
     data = r.json()
     u = data.get("usage") or {}
     return Completion(
-        text=data["choices"][0]["message"]["content"] or "",
+        text=data["choices"][0]["message"].get("content") or "",
         tokens_in=u.get("prompt_tokens", 0),
         tokens_out=u.get("completion_tokens", 0),
     )
+
+
+def _error_body(r: Any) -> dict:
+    try:
+        err = r.json().get("error") or {}
+        return err if isinstance(err, dict) else {}
+    except Exception:  # noqa: BLE001
+        return {}
 
 
 def _retry_after(response: Any) -> float | None:
@@ -298,9 +360,22 @@ def _provider() -> Provider:
         return _provider_override
     if settings.llm_provider == "anthropic":
         return _anthropic
-    if settings.llm_provider in {"openai", "openai_compatible"}:
+    if settings.llm_provider in {"openai", "openai_compatible", "groq"}:
         return _openai_compatible
-    raise LLMError(f"unknown LLM_PROVIDER {settings.llm_provider!r}")
+    raise LLMConfigError(
+        f"Unknown LLM_PROVIDER {settings.llm_provider!r} in .env. Use 'groq', 'openai' or 'anthropic'."
+    )
+
+
+def check_config() -> None:
+    """Fail fast (before any web search or indexing) on an obviously broken setup."""
+    if _provider_override is not None:
+        return
+    provider = _provider()
+    if provider is _anthropic and not settings.anthropic_api_key:
+        raise LLMConfigError("ANTHROPIC_API_KEY is empty in .env (or set LLM_PROVIDER=groq with GROQ_API_KEY).")
+    if provider is _openai_compatible and not _compat_key():
+        raise LLMConfigError("No API key set. Put your key in .env as GROQ_API_KEY (or OPENAI_API_KEY) and restart the backend.")
 
 
 def model_for(tier: Tier) -> str:
@@ -390,6 +465,10 @@ async def _raw_call(tier: Tier, system: str, user: str, max_tokens: int, tempera
                 b.tpm.settle(reservation, 0)  # rejected calls consume nothing
             if attempt == MAX_ATTEMPTS:
                 raise LLMUnavailable(f"{label}: {e}") from e
+            if e.retry_after is not None and e.retry_after > MAX_RETRY_AFTER:
+                raise LLMUnavailable(
+                    f"{label}: rate limit needs a {e.retry_after:.0f}s wait (daily quota likely used up)"
+                ) from e
             delay = e.retry_after if e.retry_after is not None else min(30.0, 1.5 * 2 ** (attempt - 1))
             delay += random.uniform(0, 0.5 * delay + 0.25)
             log.warning("LLM %s retry %d in %.1fs (%s)", label, attempt, delay, e)
