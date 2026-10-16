@@ -1,0 +1,35 @@
+ACME BANK LIMITED
+ANTI-MONEY LAUNDERING AND KNOW YOUR CUSTOMER POLICY
+Version 0.3 (Draft for Board review)
+
+1. Purpose
+1.1 This policy sets out how Acme Bank Limited identifies, assesses and mitigates the risk that its products, services and delivery channels are used for money laundering or terrorist financing.
+
+2. Definitions
+2.1 "Customer" means any natural or legal person who maintains an account with the Bank or who conducts an occasional transaction through any branch or digital channel of the Bank.
+2.2 "Beneficial owner" means the natural person who ultimately owns or controls a customer, or on whose behalf a transaction is being conducted.
+
+3. Customer Due Diligence
+3.1 The Bank will verify the identity of each customer using reliable, independent source documents, data or information before or during the course of establishing a business relationship.
+3.2 Customer identification records may be verified within 90 days after the account is opened where the branch manager considers it appropriate to do so.
+3.3 The Bank will identify the beneficial owners of legal persons only where a single natural person holds more than 50 percent of the ownership interest.
+3.4 Enhanced due diligence may be applied to customers that staff consider to be higher risk, based on their own judgement and experience.
+
+4. Politically Exposed Persons
+4.1 Accounts for politically exposed persons may be opened by the relationship manager after completing the standard customer due diligence process.
+
+5. Ongoing Monitoring
+5.1 The Bank will review customer profiles and supporting documents periodically as resources permit.
+5.2 Transactions that appear unusual or inconsistent with the customer profile should be discussed with the line manager before any further action is taken.
+
+6. Record Keeping
+6.1 The Bank will retain records of all domestic and international transactions for at least three years after the date of the transaction.
+
+7. Reporting
+7.1 Suspicious transactions shall be reported to the Compliance Officer, who will decide whether to inform the Financial Monitoring Unit within a reasonable time.
+
+8. Training
+8.1 All staff will receive anti-money laundering training at the time of joining the Bank.
+
+9. Governance
+9.1 This policy will be approved by the Chief Executive Officer and reviewed whenever management considers it necessary.

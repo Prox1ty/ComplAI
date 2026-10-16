@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.venv/
+__pycache__/
+*.pyc
+.env
+.pytest_cache/
+data/chroma/
+data/cache/
+data/runs/*
+!data/runs/.gitkeep
+data/registry.json
+data/docs.sqlite
+corpus/*.pdf
