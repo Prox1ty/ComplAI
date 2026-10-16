@@ -1,0 +1,22 @@
+# Python 3.11+
+fastapi==0.115.12
+uvicorn[standard]==0.34.2
+pydantic==2.11.4
+python-multipart==0.0.20
+python-dotenv==1.1.0
+httpx==0.28.1
+anthropic==0.52.0
+numpy==2.2.5
+sentence-transformers==4.1.0
+chromadb==1.0.9
+rank-bm25==0.2.2
+rapidfuzz==3.13.0
+diskcache==5.6.3
+trafilatura==2.0.0
+pymupdf==1.25.5
+python-docx==1.1.2
+duckduckgo-search==8.0.1
+
+# tests
+pytest==8.3.5
+pytest-asyncio==0.26.0

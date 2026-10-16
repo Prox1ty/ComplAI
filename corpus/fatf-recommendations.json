@@ -1,0 +1,9 @@
+{
+  "jurisdiction": "global",
+  "title": "The FATF Recommendations: International Standards on Combating Money Laundering and the Financing of Terrorism & Proliferation",
+  "issuer": "Financial Action Task Force",
+  "url": "https://www.fatf-gafi.org/en/publications/Fatfrecommendations/Fatf-recommendations.html",
+  "download_url": "https://www.fatf-gafi.org/content/dam/fatf-gafi/recommendations/FATF%20Recommendations%202012.pdf.coredownload.inline.pdf",
+  "topics": ["aml_risk_assessment", "customer_due_diligence", "enhanced_due_diligence", "beneficial_ownership", "pep", "sanctions", "transaction_monitoring", "suspicious_reporting", "tipping_off", "record_keeping", "wire_transfers", "correspondent_banking", "training", "governance"],
+  "language": "en"
+}
