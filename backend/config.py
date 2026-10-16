@@ -58,7 +58,7 @@ class Settings:
     # Retrieval
     embed_backend: str = field(default_factory=lambda: os.getenv("EMBED_BACKEND", "st"))  # st | hash
     embed_model: str = field(default_factory=lambda: os.getenv("EMBED_MODEL", "intfloat/multilingual-e5-small"))
-    vector_backend: str = field(default_factory=lambda: os.getenv("VECTOR_BACKEND", "chroma"))  # chroma | memory
+    vector_backend: str = field(default_factory=lambda: os.getenv("VECTOR_BACKEND", "sqlite"))  # sqlite | chroma | memory
     coverage_high: float = field(default_factory=lambda: _float("COVERAGE_HIGH", 0.88))
     coverage_low: float = field(default_factory=lambda: _float("COVERAGE_LOW", 0.80))
 

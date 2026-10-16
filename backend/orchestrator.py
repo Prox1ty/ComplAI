@@ -189,7 +189,7 @@ def _dedupe(drafts: list[Draft]) -> list[Draft]:
     for d in sorted(drafts, key=lambda d: -SEVERITY_RANK[d.finding.severity]):
         f = d.finding
         if f.gap_type == "MISSING":  # the same omission found via several documents
-            key = ("MISSING", f.span.start, " ".join(f.title.lower().split()))
+            key = ("MISSING", " ".join(f.title.lower().split()))
         else:
             key = (f.span.start, f.span.end, f.gap_type, f.citations[0].chunk_id if f.citations else "")
         if key in seen:

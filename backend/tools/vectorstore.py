@@ -99,6 +99,117 @@ class _MemoryStore:
         return len(self.data.setdefault(col, {}))
 
 
+class _SqliteStore:
+    """Default store: one SQLite file (``data/vectors.sqlite``) holding text,
+    metadata and float32 embeddings. Ranking happens in ``hybrid_search``, so
+    no ANN index is needed; this avoids the on-disk index files that Chroma
+    keeps (and that cloud-synced folders such as OneDrive can corrupt)."""
+
+    def __init__(self, path=None) -> None:
+        import sqlite3
+
+        self.path = path or (settings.data_dir / "vectors.sqlite")
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.conn = sqlite3.connect(str(self.path), check_same_thread=False)
+        self.conn.execute("PRAGMA journal_mode=WAL")
+        self.conn.execute(
+            "CREATE TABLE IF NOT EXISTS vectors (collection TEXT NOT NULL, id TEXT NOT NULL, doc TEXT NOT NULL,"
+            " meta TEXT NOT NULL, emb BLOB NOT NULL, PRIMARY KEY (collection, id))"
+        )
+        self.conn.commit()
+        self.lock = threading.Lock()
+
+    def upsert(self, col: str, ids, docs, metas, embs) -> None:
+        rows = [
+            (col, i, d, json.dumps(m, ensure_ascii=False), np.asarray(e, dtype=np.float32).tobytes())
+            for i, d, m, e in zip(ids, docs, metas, embs)
+        ]
+        with self.lock:
+            self.conn.executemany("INSERT OR REPLACE INTO vectors VALUES (?,?,?,?,?)", rows)
+            self.conn.commit()
+
+    def _rows(self, col: str, ids: list[str] | None):
+        with self.lock:
+            if ids is None:
+                return self.conn.execute("SELECT id, doc, meta, emb FROM vectors WHERE collection=?", (col,)).fetchall()
+            out = []
+            for s in range(0, len(ids), 500):
+                part = ids[s:s + 500]
+                q = f"SELECT id, doc, meta, emb FROM vectors WHERE collection=? AND id IN ({','.join('?' * len(part))})"
+                out.extend(self.conn.execute(q, (col, *part)).fetchall())
+            return out
+
+    def get(self, col: str, where: dict[str, Any] | None = None, ids: list[str] | None = None):
+        rows = []
+        for i, d, m, e in self._rows(col, ids):
+            meta = json.loads(m)
+            if _match_scalar(meta, where):
+                rows.append((i, d, meta, np.frombuffer(e, dtype=np.float32)))
+        if not rows:
+            return [], [], [], np.zeros((0, 1), dtype=np.float32)
+        dims = {len(r[3]) for r in rows}
+        if len(dims) > 1:  # embedder changed (e.g. hash vs model); keep the majority dimension
+            dim = max(dims, key=lambda d: sum(1 for r in rows if len(r[3]) == d))
+            rows = [r for r in rows if len(r[3]) == dim]
+        return [r[0] for r in rows], [r[1] for r in rows], [r[2] for r in rows], np.stack([r[3] for r in rows])
+
+    def delete(self, col: str, where: dict[str, Any]) -> None:
+        ids, _, _, _ = self.get(col, where)
+        with self.lock:
+            for s in range(0, len(ids), 500):
+                part = ids[s:s + 500]
+                self.conn.execute(
+                    f"DELETE FROM vectors WHERE collection=? AND id IN ({','.join('?' * len(part))})", (col, *part)
+                )
+            self.conn.commit()
+
+    def count(self, col: str) -> int:
+        with self.lock:
+            return self.conn.execute("SELECT COUNT(*) FROM vectors WHERE collection=?", (col,)).fetchone()[0]
+
+
+def migrate_from_chroma(store: "_SqliteStore", chroma_db=None) -> int:
+    """Copy regulatory chunks out of an old Chroma database into ``store``.
+
+    Reads ``chroma.sqlite3`` directly (no chromadb import, no HNSW files) and
+    re-embeds the text, so it also works when Chroma's index files are broken.
+    Only ``regulatory_facts`` is migrated; the other collections are per run.
+    """
+    import sqlite3
+
+    path = chroma_db or (settings.data_dir / "chroma" / "chroma.sqlite3")
+    if not path.exists() or store.count(FACTS):
+        return 0
+    try:
+        c = sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
+        seg = c.execute(
+            "SELECT s.id FROM segments s JOIN collections col ON col.id = s.collection "
+            "WHERE col.name = ? AND s.scope = 'METADATA'", (FACTS,)
+        ).fetchone()
+        if not seg:
+            return 0
+        rows = c.execute(
+            "SELECT e.embedding_id, m.key, m.string_value, m.int_value, m.float_value, m.bool_value "
+            "FROM embeddings e JOIN embedding_metadata m ON m.id = e.id WHERE e.segment_id = ?", (seg[0],)
+        ).fetchall()
+        c.close()
+    except sqlite3.Error:
+        return 0
+    recs: dict[str, dict[str, Any]] = {}
+    for eid, key, sv, iv, fv, bv in rows:
+        val = sv if sv is not None else iv if iv is not None else fv if fv is not None else (bool(bv) if bv is not None else None)
+        if val is not None:
+            recs.setdefault(eid, {})[key] = val
+    items = [(i, m.pop("chroma:document"), m) for i, m in recs.items() if "chroma:document" in m]
+    if not items:
+        return 0
+    items.sort(key=lambda x: x[0])
+    docs = [d for _, d, _ in items]
+    embs = embed(docs, "passage")
+    store.upsert(FACTS, [i for i, _, _ in items], docs, [m for _, _, m in items], embs)
+    return len(items)
+
+
 class _ChromaStore:
     def __init__(self) -> None:
         import chromadb
@@ -182,7 +293,17 @@ def get_store():
     global _store
     with _store_lock:
         if _store is None:
-            _store = _ChromaStore() if settings.vector_backend == "chroma" else _MemoryStore()
+            if settings.vector_backend == "chroma":
+                _store = _ChromaStore()
+            elif settings.vector_backend == "memory":
+                _store = _MemoryStore()
+            else:
+                _store = _SqliteStore()
+                n = migrate_from_chroma(_store)
+                if n:
+                    import logging
+
+                    logging.getLogger(__name__).info("migrated %d regulatory chunks from the old Chroma store", n)
         return _store
 
 
