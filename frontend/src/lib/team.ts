@@ -15,7 +15,7 @@ export const TEAM: Person[] = [
     name: 'Muaaz Tariq',
     initials: 'MT',
     github: 'https://github.com/Prox1ty',
-    linkedin: 'https://www.linkedin.com/feed/',
+    linkedin: 'https://www.linkedin.com/in/muaaz-tariq-359715367/',
     discord: 'https://discord.com/users/608649430794764298',
     discordName: 'prox_109',
   },
