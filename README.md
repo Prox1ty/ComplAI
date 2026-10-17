@@ -21,7 +21,7 @@ React SPA  ── POST /api/runs ──▶  Orchestrator (plain Python state mac
 | Verifier | small | Deterministic citation checks, then entailment; drops unsupported findings |
 | Rewriter | small | Drop-in replacement wording per finding |
 
-Stores: three Chroma collections that are never mixed (`regulatory_facts`, `context_inferences`, `policy_clauses`), `data/registry.json` (jurisdiction key → doc ids), and `data/docs.sqlite` (metadata and cached obligations). Jurisdictions resolve to a chain such as `PK/Punjab → PK → global` (plus `EU`/`GCC` blocs).
+Stores: three vector collections that are never mixed (`regulatory_facts`, `context_inferences`, `policy_clauses`) in `data/vectors.sqlite`, indexed with [sqlite-vec](https://github.com/asg017/sqlite-vec) (a `vec0` table partitioned per collection and run; hybrid search fuses its KNN results with BM25), plus `data/registry.json` (jurisdiction key → doc ids), and `data/docs.sqlite` (metadata and cached obligations). Jurisdictions resolve to a chain such as `PK/Punjab → PK → global` (plus `EU`/`GCC` blocs).
 
 All LLM traffic goes through `backend/llm.py:call()`: exact-prompt cache, a TPM/RPM token bucket with a 60-second window guard at 80% of your limits, a concurrency cap of 3, backoff that honours `retry-after`, JSON validation with one repair call, and a per-run token ceiling that switches to reduced mode at 80%.
 
@@ -40,7 +40,7 @@ npm run dev:mock        # http://localhost:5173
 ```bash
 python3.11 -m venv .venv && source .venv/bin/activate
 pip install -r backend/requirements.txt
-cp .env.example .env            # add ANTHROPIC_API_KEY (and TAVILY_API_KEY if you have one)
+cp .env.example .env            # add GROQ_API_KEY (free at console.groq.com), and TAVILY_API_KEY if you have one
 
 # seed the global corpus (FATF Recommendations, Basel Core Principles, Basel AML guidelines)
 python scripts/seed_corpus.py --download
@@ -50,6 +50,8 @@ uvicorn backend.main:app --reload --port 8000
 # second terminal
 cd frontend && npm install && npm run dev
 ```
+
+Never put real keys in `.env.example`: it is committed to git. Only `.env` is ignored.
 
 Set `FAKE_PIPELINE=1` to exercise the real API and SSE stream without any LLM key; the backend replays the mock report.
 
@@ -72,7 +74,7 @@ backend/    main.py, orchestrator.py, llm.py, schemas.py, config.py, taxonomy.py
 corpus/     seed document sidecars (.json); PDFs are downloaded or added manually
 samples/    sample draft policy
 scripts/    seed_corpus.py, build_mock_result.py
-data/       chroma/, registry.json, docs.sqlite, runs/{id}/result.json + debug.json
+data/       vectors.sqlite, registry.json, docs.sqlite, runs/{id}/result.json + debug.json
 ```
 
 `data/runs/{id}/debug.json` lists dropped and unverified findings, skipped sources and every LLM call with its token usage.

@@ -12,3 +12,6 @@ data/runs/*
 data/registry.json
 data/docs.sqlite
 corpus/*.pdf
+data/vectors.sqlite*
+.vscode/*
+!.vscode/settings.json

@@ -97,3 +97,29 @@ async def test_bad_upload_reports_error(isolated, tmp_path):
     assert res is None
     last = sse.history("bad")[-1]
     assert last.phase == "error" and "empty" in last.detail
+
+
+async def test_run_fails_loudly_when_no_model_call_succeeds(isolated):
+    from backend.llm import RetryableError
+
+    async def down(*a):
+        raise RetryableError("429", retry_after=3600)
+
+    llm.set_provider(FakeProvider())
+    await _seed()  # seeding works, then the model goes away
+    llm.set_provider(down)
+    res = await _run(RunStore(), None, "down")
+    assert res is None
+    last = sse.history("down")[-1]
+    assert last.phase == "error" and "language model could not be used" in last.detail
+
+
+async def test_config_error_stops_run_before_any_work(isolated, monkeypatch):
+    from backend.config import settings
+
+    llm.set_provider(None)
+    monkeypatch.setattr(settings, "llm_provider", "nonsense")
+    res = await _run(RunStore(), None, "cfg")
+    assert res is None
+    events = sse.history("cfg")
+    assert [e.phase for e in events] == ["error"] and "LLM_PROVIDER" in events[0].detail

@@ -8,11 +8,20 @@ from pathlib import Path
 try:  # optional at import time so pure tools/tests work without it
     from dotenv import load_dotenv
 
-    load_dotenv()
+    # override=True: .env is the source of truth. Without it, stale variables
+    # already in the shell (VS Code injects .env into terminals when they open)
+    # silently win over later edits to .env.
+    load_dotenv(Path(__file__).resolve().parents[1] / ".env", override=True)
 except ImportError:  # pragma: no cover
     pass
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def _project_path(p: str) -> Path:
+    """Relative paths in .env are relative to the project root, not the shell's cwd."""
+    path = Path(p).expanduser()
+    return path if path.is_absolute() else (ROOT / path).resolve()
 
 
 def _bool(name: str, default: bool = False) -> bool:
@@ -37,9 +46,11 @@ def _float(name: str, default: float) -> float:
 @dataclass
 class Settings:
     # LLM
-    llm_provider: str = field(default_factory=lambda: os.getenv("LLM_PROVIDER", "anthropic"))
+    llm_provider: str = field(default_factory=lambda: os.getenv("LLM_PROVIDER", "anthropic").strip().lower())
     anthropic_api_key: str = field(default_factory=lambda: os.getenv("ANTHROPIC_API_KEY", ""))
     openai_api_key: str = field(default_factory=lambda: os.getenv("OPENAI_API_KEY", ""))
+    groq_api_key: str = field(default_factory=lambda: os.getenv("GROQ_API_KEY", ""))
+    reasoning_effort: str = field(default_factory=lambda: os.getenv("REASONING_EFFORT", "low"))
     openai_base_url: str = field(default_factory=lambda: os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1"))
     small_model: str = field(default_factory=lambda: os.getenv("SMALL_MODEL", "claude-haiku-5-5"))
     large_model: str = field(default_factory=lambda: os.getenv("LARGE_MODEL", "claude-sonnet-5-5"))
@@ -56,12 +67,12 @@ class Settings:
     # Retrieval
     embed_backend: str = field(default_factory=lambda: os.getenv("EMBED_BACKEND", "st"))  # st | hash
     embed_model: str = field(default_factory=lambda: os.getenv("EMBED_MODEL", "intfloat/multilingual-e5-small"))
-    vector_backend: str = field(default_factory=lambda: os.getenv("VECTOR_BACKEND", "chroma"))  # chroma | memory
+    vector_backend: str = field(default_factory=lambda: os.getenv("VECTOR_BACKEND", "sqlite"))  # sqlite (sqlite-vec index) | sqlite-plain | chroma | memory
     coverage_high: float = field(default_factory=lambda: _float("COVERAGE_HIGH", 0.88))
     coverage_low: float = field(default_factory=lambda: _float("COVERAGE_LOW", 0.80))
 
     # App
-    data_dir: Path = field(default_factory=lambda: Path(os.getenv("DATA_DIR", str(ROOT / "data"))))
+    data_dir: Path = field(default_factory=lambda: _project_path(os.getenv("DATA_DIR", "data")))
     cors_origins: list[str] = field(
         default_factory=lambda: [o.strip() for o in os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",") if o.strip()]
     )
