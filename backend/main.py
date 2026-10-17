@@ -31,7 +31,14 @@ INSTITUTIONS = {"Commercial bank", "Digital bank", "Credit union", "Microfinance
 
 @app.get("/api/health")
 async def health() -> dict:
-    return {"status": "ok", "fake_pipeline": settings.fake_pipeline, "provider": settings.llm_provider}
+    from backend.tools.vectorstore import index_info
+
+    return {
+        "status": "ok",
+        "fake_pipeline": settings.fake_pipeline,
+        "provider": settings.llm_provider,
+        "vector_search": index_info(),
+    }
 
 
 @app.post("/api/runs")
