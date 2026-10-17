@@ -3,7 +3,16 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ComplAI · Policy Compliance Review</title>
+    <title>ComplAI – Policy compliance review</title>
+    <meta name="theme-color" content="#f1f4f1" />
+    <script>
+      // Apply the saved or system theme before first paint (no light flash in dark mode).
+      try {
+        var t = localStorage.getItem('complai.theme')
+        if (t !== 'light' && t !== 'dark') t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+        document.documentElement.dataset.theme = t
+      } catch (e) {}
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet" />
   </head>

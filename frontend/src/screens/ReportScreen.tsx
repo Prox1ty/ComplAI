@@ -4,9 +4,12 @@ import { buildSegments, numberFindings } from '../lib/segments'
 import { jurisdictionLabel } from '../lib/geo'
 import PolicyView from '../components/PolicyView'
 import FindingDetail from '../components/FindingDetail'
-import GapTable from '../components/GapTable'
+import GapTable, { ApplyButtons } from '../components/GapTable'
 import RevisionPanel from '../components/RevisionPanel'
+import Collapsible from '../components/Collapsible'
+import FindingDrawer from '../components/FindingDrawer'
 import { applyFixes } from '../lib/api'
+import { PHONE_QUERY, useMediaQuery } from '../lib/useMediaQuery'
 
 interface Props {
   result: Result
@@ -47,6 +50,15 @@ export default function ReportScreen({ result, onNew }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null)
   const closeTimer = useRef<number>()
   const [popup, setPopup] = useState<Popup | null>(null)
+  // Phone: tapping a passage opens a drawer from the right instead of an inline popup.
+  const isPhone = useMediaQuery(PHONE_QUERY)
+  const [drawer, setDrawer] = useState<{ key: string; findings: Finding[] } | null>(null)
+  const closeDrawer = useCallback(() => setDrawer(null), [])
+
+  // Collapsible sections; the report header (buttons, stats) always stays visible.
+  const [sections, setSections] = useState({ analysis: true, gaps: true, revision: true })
+  const toggleSection = (k: keyof typeof sections) => setSections((s) => ({ ...s, [k]: !s[k] }))
+  const openSection = (k: keyof typeof sections) => setSections((s) => (s[k] ? s : { ...s, [k]: true }))
 
   // Human in the loop: the reviewer picks which fixes to accept and may edit them.
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -85,9 +97,13 @@ export default function ReportScreen({ result, onNew }: Props) {
     setApplying(true)
     setApplyError(null)
     try {
-      const rev = await applyFixes(result, ids.map((id) => ({ finding_id: id, text: edits[id] ?? null })))
+      const rev = await applyFixes(
+        result,
+        ids.map((id) => ({ finding_id: id, text: edits[id] ?? null })),
+      )
       setRevision(rev)
-      window.setTimeout(() => document.getElementById('revision')?.scrollIntoView({ behavior: 'smooth' }), 50)
+      openSection('revision')
+      window.setTimeout(() => document.getElementById('revision')?.scrollIntoView({ behavior: 'smooth' }), 80)
     } catch (e) {
       setApplyError((e as Error).message)
     } finally {
@@ -101,24 +117,38 @@ export default function ReportScreen({ result, onNew }: Props) {
     closeTimer.current = window.setTimeout(() => setPopup((p) => (p && !p.pinned ? null : p)), 180)
   }, [])
 
-  const open = useCallback((key: string, fs: Finding[], el: HTMLElement, pin: boolean) => {
-    window.clearTimeout(closeTimer.current)
-    const wrap = wrapRef.current
-    if (!wrap) return
-    const w = wrap.getBoundingClientRect()
-    const rects = el.getClientRects()
-    const r = rects.length ? rects[rects.length - 1] : el.getBoundingClientRect()
-    const width = Math.min(POPUP_W, w.width - 16)
-    const left = Math.max(8, Math.min(r.left - w.left, w.width - width - 8))
-    setPopup((p) => ({
-      key,
-      findings: fs,
-      top: r.bottom - w.top + 8,
-      left,
-      width,
-      pinned: pin ? true : Boolean(p?.key === key && p.pinned),
-    }))
-  }, [])
+  const open = useCallback(
+    (key: string, fs: Finding[], el: HTMLElement, pin: boolean) => {
+      if (isPhone) {
+        // hover/focus also fire on tap; only an explicit tap (pin) opens the drawer
+        if (pin) setDrawer({ key, findings: fs })
+        return
+      }
+      window.clearTimeout(closeTimer.current)
+      const wrap = wrapRef.current
+      if (!wrap) return
+      const w = wrap.getBoundingClientRect()
+      const rects = el.getClientRects()
+      const r = rects.length ? rects[rects.length - 1] : el.getBoundingClientRect()
+      const width = Math.min(POPUP_W, w.width - 16)
+      const left = Math.max(8, Math.min(r.left - w.left, w.width - width - 8))
+      setPopup((p) => ({
+        key,
+        findings: fs,
+        top: r.bottom - w.top + 8,
+        left,
+        width,
+        pinned: pin ? true : Boolean(p?.key === key && p.pinned),
+      }))
+    },
+    [isPhone],
+  )
+
+  // switching between phone and desktop layouts closes whichever view is open
+  useEffect(() => {
+    setPopup(null)
+    setDrawer(null)
+  }, [isPhone])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setPopup(null)
@@ -136,13 +166,20 @@ export default function ReportScreen({ result, onNew }: Props) {
   }, [])
 
   const flashTo = (fid: string) => {
-    const el = wrapRef.current?.querySelector<HTMLElement>(`[data-fids~="${fid}"]`)
-    if (!el) return
-    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    el.classList.remove('flash')
-    void el.offsetWidth
-    el.classList.add('flash')
-    window.setTimeout(() => el.classList.remove('flash'), 1600)
+    const wasOpen = sections.analysis
+    openSection('analysis')
+    window.setTimeout(
+      () => {
+        const el = wrapRef.current?.querySelector<HTMLElement>(`[data-fids~="${fid}"]`)
+        if (!el) return
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        el.classList.remove('flash')
+        void el.offsetWidth
+        el.classList.add('flash')
+        window.setTimeout(() => el.classList.remove('flash'), 1600)
+      },
+      wasOpen ? 0 : 360,
+    ) // wait for the section to expand
   }
 
   return (
@@ -153,8 +190,8 @@ export default function ReportScreen({ result, onNew }: Props) {
             <p className="eyebrow">Gap report · {policy.filename}</p>
             <h1>{jurisdictionLabel(meta)}</h1>
             <p className="muted">
-              {meta.policy_type} · {meta.institution_type} · regulations as of{' '}
-              <strong>{meta.as_of}</strong> ({meta.timezone})
+              {meta.policy_type} · {meta.institution_type} · regulations as of <strong>{meta.as_of}</strong> (
+              {meta.timezone})
             </p>
           </div>
           <div className="report-actions no-print">
@@ -203,73 +240,95 @@ export default function ReportScreen({ result, onNew }: Props) {
       )}
 
       <section className="card policy-card">
-        <div className="legend no-print">
-          <span>
-            <i className="lg lg-high" /> High
-          </span>
-          <span>
-            <i className="lg lg-medium" /> Medium
-          </span>
-          <span>
-            <i className="lg lg-low" /> Low
-          </span>
-          <span>
-            <i className="lg lg-missing">+</i> Missing obligation
-          </span>
-          <span className="muted">Hover, focus or tap highlighted text for details.</span>
-        </div>
-        <div className="policy-wrap" ref={wrapRef}>
-          <PolicyView
-            text={policy.full_text}
-            segments={segments}
-            numbers={numbers}
-            openKey={popup?.key ?? null}
-            onOpen={open}
-            onLeave={scheduleClose}
-          />
-          {popup && (
-            <div
-              className="popup no-print"
-              role="dialog"
-              style={{ top: popup.top, left: popup.left, width: popup.width }}
-              onMouseEnter={cancelClose}
-              onMouseLeave={scheduleClose}
-              onFocus={cancelClose}
-              onBlur={(e) => {
-                if (!e.currentTarget.contains(e.relatedTarget as Node)) scheduleClose()
-              }}
-            >
-              <button className="popup-close" aria-label="Close" onClick={() => setPopup(null)}>
-                ×
-              </button>
-              {popup.findings.map((f) => (
-                <FindingDetail key={f.id} finding={f} number={numbers.get(f.id)} />
-              ))}
-            </div>
-          )}
-        </div>
+        <Collapsible
+          title="Policy analysis"
+          count={`${findings.length} finding${findings.length === 1 ? '' : 's'} in ${policy.clauses.length} clauses`}
+          open={sections.analysis}
+          onToggle={() => toggleSection('analysis')}
+        >
+          <div className="legend no-print">
+            <span>
+              <i className="lg lg-high" /> High
+            </span>
+            <span>
+              <i className="lg lg-medium" /> Medium
+            </span>
+            <span>
+              <i className="lg lg-low" /> Low
+            </span>
+            <span>
+              <i className="lg lg-missing">+</i> Missing obligation
+            </span>
+            <span className="muted">
+              {isPhone ? 'Tap highlighted text for details.' : 'Hover, focus or click highlighted text for details.'}
+            </span>
+          </div>
+          <div className="policy-wrap" ref={wrapRef}>
+            <PolicyView
+              text={policy.full_text}
+              segments={segments}
+              numbers={numbers}
+              openKey={(isPhone ? drawer?.key : popup?.key) ?? null}
+              onOpen={open}
+              onLeave={scheduleClose}
+            />
+            {popup && !isPhone && (
+              <div
+                className="popup no-print"
+                role="dialog"
+                style={{ top: popup.top, left: popup.left, width: popup.width }}
+                onMouseEnter={cancelClose}
+                onMouseLeave={scheduleClose}
+                onFocus={cancelClose}
+                onBlur={(e) => {
+                  if (!e.currentTarget.contains(e.relatedTarget as Node)) scheduleClose()
+                }}
+              >
+                <button className="popup-close" aria-label="Close" onClick={() => setPopup(null)}>
+                  ×
+                </button>
+                {popup.findings.map((f) => (
+                  <FindingDetail key={f.id} finding={f} number={numbers.get(f.id)} />
+                ))}
+              </div>
+            )}
+          </div>
+        </Collapsible>
       </section>
 
-      <section className="card no-print">
-        <h2>Gap table</h2>
-        <p className="muted small no-print hitl-note">
-          You decide what changes: tick the fixes you accept, edit any wording, then apply. Nothing is applied
-          automatically.
-        </p>
-        <GapTable
-          rows={result.gap_table}
-          numbers={numbers}
-          onRowClick={flashTo}
-          review={{
-            selected,
-            edits,
-            onToggle: toggle,
-            onToggleAll: toggleAll,
-            onEdit: editFix,
-            onApply: apply,
-            applying,
-          }}
-        />
+      <section className="card no-print gaps-card">
+        <Collapsible
+          title="Gap table"
+          count={`${result.gap_table.length} gap${result.gap_table.length === 1 ? '' : 's'}`}
+          open={sections.gaps}
+          onToggle={() => toggleSection('gaps')}
+          actions={
+            <ApplyButtons
+              selectedCount={fixable.filter((id) => selected.has(id)).length}
+              fixableCount={fixable.length}
+              applying={applying}
+              onApply={apply}
+            />
+          }
+        >
+          <p className="muted small no-print hitl-note">
+            You decide what changes: tick the fixes you accept, edit any wording, then apply. Nothing is applied
+            automatically.
+          </p>
+          <GapTable
+            rows={result.gap_table}
+            numbers={numbers}
+            onRowClick={flashTo}
+            review={{
+              selected,
+              edits,
+              onToggle: toggle,
+              onToggleAll: toggleAll,
+              onEdit: editFix,
+              applying,
+            }}
+          />
+        </Collapsible>
         {applyError && <p className="error-text">{applyError}</p>}
       </section>
 
@@ -278,12 +337,20 @@ export default function ReportScreen({ result, onNew }: Props) {
           revision={revision}
           numbers={numbers}
           filename={policy.filename}
+          open={sections.revision}
+          onToggle={() => toggleSection('revision')}
           onBack={() => {
             setRevision(null)
-            window.setTimeout(() => document.querySelector('.gap-table')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
+            openSection('gaps')
+            window.setTimeout(
+              () => document.querySelector('.gaps-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
+              80,
+            )
           }}
         />
       )}
+
+      {isPhone && <FindingDrawer findings={drawer?.findings ?? null} numbers={numbers} onClose={closeDrawer} />}
 
       <section className="print-only print-findings">
         <h2>Findings</h2>

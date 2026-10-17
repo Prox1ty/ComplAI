@@ -9,8 +9,38 @@ export interface ReviewState {
   onToggle: (findingId: string) => void
   onToggleAll: (ids: string[], on: boolean) => void
   onEdit: (findingId: string, text: string | null) => void
-  onApply: (mode: 'all' | 'selected') => void
   applying: boolean
+}
+
+/** "Apply selected" / "Apply all" — rendered in the gap table's section header so it stays visible. */
+export function ApplyButtons({
+  selectedCount,
+  fixableCount,
+  applying,
+  onApply,
+}: {
+  selectedCount: number
+  fixableCount: number
+  applying: boolean
+  onApply: (mode: 'all' | 'selected') => void
+}) {
+  return (
+    <div className="apply-actions">
+      <span className="muted small">
+        {selectedCount} of {fixableCount} fixes selected
+      </span>
+      <button
+        className="btn ghost small"
+        disabled={applying || selectedCount === 0}
+        onClick={() => onApply('selected')}
+      >
+        Apply selected ({selectedCount})
+      </button>
+      <button className="btn primary small" disabled={applying || fixableCount === 0} onClick={() => onApply('all')}>
+        {applying ? 'Applying…' : 'Apply all fixes'}
+      </button>
+    </div>
+  )
 }
 
 interface Props {
@@ -38,7 +68,6 @@ export default function GapTable({ rows, numbers, onRowClick, printMode = false,
   }, [rows, filter, desc, numbers, printMode])
 
   const reviewable = !printMode && review
-  const fixable = rows.filter((r) => r.fix.trim() || review?.edits[r.finding_id]?.trim())
   const shownIds = shown.filter((r) => r.fix.trim() || review?.edits[r.finding_id]?.trim()).map((r) => r.finding_id)
   const allShownSelected = !!review && shownIds.length > 0 && shownIds.every((id) => review.selected.has(id))
 
@@ -70,26 +99,15 @@ export default function GapTable({ rows, numbers, onRowClick, printMode = false,
           <span className="muted">
             {shown.length} of {rows.length}
           </span>
-          {reviewable && (
-            <div className="apply-actions">
-              <span className="muted small">
-                {review.selected.size} of {fixable.length} fixes selected
-              </span>
-              <button
-                className="btn ghost small"
-                disabled={review.applying || review.selected.size === 0}
-                onClick={() => review.onApply('selected')}
-              >
-                Apply selected ({review.selected.size})
-              </button>
-              <button
-                className="btn primary small"
-                disabled={review.applying || fixable.length === 0}
-                onClick={() => review.onApply('all')}
-              >
-                {review.applying ? 'Applying…' : 'Apply all fixes'}
-              </button>
-            </div>
+          {reviewable && shownIds.length > 0 && (
+            <label className="phone-only select-all">
+              <input
+                type="checkbox"
+                checked={allShownSelected}
+                onChange={(e) => review.onToggleAll(shownIds, e.target.checked)}
+              />
+              Select all
+            </label>
           )}
         </div>
       )}
@@ -155,9 +173,11 @@ export default function GapTable({ rows, numbers, onRowClick, printMode = false,
                 <td>
                   <SeverityBadge severity={r.severity} />
                 </td>
-                <td>{r.issue}</td>
-                <td className="src">{r.source}</td>
-                <td className="fix" onClick={(e) => reviewable && e.stopPropagation()}>
+                <td className="issue">{r.issue}</td>
+                <td className="src" data-label="Source">
+                  {r.source}
+                </td>
+                <td className="fix" data-label="Suggested fix" onClick={(e) => reviewable && e.stopPropagation()}>
                   {reviewable && editing === r.finding_id ? (
                     <div className="fix-edit">
                       <textarea
