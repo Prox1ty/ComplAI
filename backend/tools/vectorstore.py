@@ -196,6 +196,7 @@ class _SqliteVecStore(_SqliteStore):
     def __init__(self, path=None) -> None:
         super().__init__(path)
         self.vec_ok = False
+        self.vec_error: str | None = None
         self.vec_version: str | None = None
         self.dim: int | None = None
         try:
@@ -208,6 +209,8 @@ class _SqliteVecStore(_SqliteStore):
             self.vec_ok = True
         except Exception as e:  # noqa: BLE001 - missing package, or Python built without extension loading
             import logging
+
+            self.vec_error = f"{type(e).__name__}: {e}"
 
             logging.getLogger(__name__).warning("sqlite-vec unavailable (%s); using exact numpy search", e)
             return
@@ -448,7 +451,8 @@ def index_info() -> str:
     st = get_store()
     if getattr(st, "vec_ok", False):
         return f"sqlite-vec {st.vec_version}"
-    return f"{type(st).__name__.strip('_')} (exact numpy search)"
+    why = getattr(st, "vec_error", None)
+    return f"{type(st).__name__.strip('_')} (exact numpy search{': ' + why if why else ''})"
 
 
 def reset_store() -> None:

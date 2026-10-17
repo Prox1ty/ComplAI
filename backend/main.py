@@ -38,6 +38,8 @@ async def health() -> dict:
         "fake_pipeline": settings.fake_pipeline,
         "provider": settings.llm_provider,
         "vector_search": index_info(),
+        "vector_backend_setting": settings.vector_backend,
+        "data_dir": str(settings.data_dir.resolve()),
     }
 
 

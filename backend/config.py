@@ -8,11 +8,20 @@ from pathlib import Path
 try:  # optional at import time so pure tools/tests work without it
     from dotenv import load_dotenv
 
-    load_dotenv()
+    # override=True: .env is the source of truth. Without it, stale variables
+    # already in the shell (VS Code injects .env into terminals when they open)
+    # silently win over later edits to .env.
+    load_dotenv(Path(__file__).resolve().parents[1] / ".env", override=True)
 except ImportError:  # pragma: no cover
     pass
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def _project_path(p: str) -> Path:
+    """Relative paths in .env are relative to the project root, not the shell's cwd."""
+    path = Path(p).expanduser()
+    return path if path.is_absolute() else (ROOT / path).resolve()
 
 
 def _bool(name: str, default: bool = False) -> bool:
@@ -63,7 +72,7 @@ class Settings:
     coverage_low: float = field(default_factory=lambda: _float("COVERAGE_LOW", 0.80))
 
     # App
-    data_dir: Path = field(default_factory=lambda: Path(os.getenv("DATA_DIR", str(ROOT / "data"))))
+    data_dir: Path = field(default_factory=lambda: _project_path(os.getenv("DATA_DIR", "data")))
     cors_origins: list[str] = field(
         default_factory=lambda: [o.strip() for o in os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",") if o.strip()]
     )
