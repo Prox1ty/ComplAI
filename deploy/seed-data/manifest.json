@@ -1,0 +1,11 @@
+{
+  "documents": 4,
+  "documents_with_obligations": 4,
+  "chunks": 112,
+  "embedding_dims": [
+    384
+  ],
+  "jurisdictions": [
+    "PK"
+  ]
+}

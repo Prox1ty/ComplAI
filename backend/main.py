@@ -8,9 +8,9 @@ from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 
-from backend.config import settings
+from backend.config import ROOT, settings
 from backend.orchestrator import Orchestrator, run_fake
 from backend.runs import store
 from backend.schemas import Result, RunInputs
@@ -121,3 +121,24 @@ async def result(run_id: str) -> Result:
     if r is None:
         raise HTTPException(404, "Result not ready.")
     return r
+
+
+# --------------------------------------------------------------------------
+# Built frontend (production / Docker): served from the same origin as the API.
+# In development Vite serves the frontend and proxies /api, so this is skipped.
+# Registered last so every /api route above takes precedence.
+# --------------------------------------------------------------------------
+import os  # noqa: E402
+
+STATIC_DIR = Path(os.getenv("STATIC_DIR", str(ROOT / "frontend" / "dist"))).resolve()
+
+if (STATIC_DIR / "index.html").is_file():
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def spa(full_path: str) -> FileResponse:
+        if full_path.startswith("api/") or full_path == "api":
+            raise HTTPException(404, "Not found.")
+        candidate = (STATIC_DIR / full_path).resolve()
+        if full_path and candidate.is_file() and STATIC_DIR in candidate.parents:
+            return FileResponse(candidate)
+        return FileResponse(STATIC_DIR / "index.html")  # single-page app: every other path renders the app

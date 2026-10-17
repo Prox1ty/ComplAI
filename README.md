@@ -63,6 +63,10 @@ pytest
 
 The suite runs offline: hashing embeddings, an in-memory vector store and a deterministic fake LLM. It covers the clause splitter, quote matcher, chunker, registry, source ranking, hybrid search, the LLM wrapper (repair, retries, caching), a 30-call TPM stress test on a virtual clock, and an end-to-end pipeline run on `samples/sample_aml_policy.txt` (including a fabricated citation the verifier must drop and a repeat run that makes zero web searches).
 
+## Deploy
+
+One Docker image serves the API and the built frontend. See [DEPLOY.md](DEPLOY.md) for Alternate Futures (GitHub Actions builds `ghcr.io/prox1ty/complai`, then `acc services create`). Locally: `docker build -t complai .` then `docker run -p 8000:8000 -e GROQ_API_KEY=... complai`.
+
 ## Repository layout
 
 ```
@@ -73,7 +77,9 @@ backend/    main.py, orchestrator.py, llm.py, schemas.py, config.py, taxonomy.py
   tests/
 corpus/     seed document sidecars (.json); PDFs are downloaded or added manually
 samples/    sample draft policy
-scripts/    seed_corpus.py, build_mock_result.py
+scripts/    seed_corpus.py, build_mock_result.py, export_seed_data.py
+deploy/     seed-data/ (regulation knowledge base bundled into the Docker image)
+docker/     entrypoint.sh
 data/       vectors.sqlite, registry.json, docs.sqlite, runs/{id}/result.json + debug.json
 ```
 
