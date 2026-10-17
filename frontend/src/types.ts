@@ -105,3 +105,35 @@ export const POLICY_TYPES = [
 ] as const
 
 export const INSTITUTION_TYPES = ['Commercial bank', 'Digital bank', 'Credit union', 'Microfinance', 'Other'] as const
+
+// Human in the loop: reviewer-approved fixes (mirror of backend Revision)
+export interface FixSelection {
+  finding_id: string
+  text?: string | null
+}
+
+export interface AppliedChange {
+  finding_id: string
+  kind: 'replace' | 'insert'
+  start: number
+  end: number
+  old_text: string
+  new_text: string
+}
+
+export interface SkippedFix {
+  finding_id?: string | null
+  reason: string
+  conflicts_with?: string | null
+}
+
+export interface Revision {
+  run_id: string
+  full_text: string
+  changes: AppliedChange[]
+  skipped: SkippedFix[]
+  docx_url: string
+  txt_url: string
+  docx_from_original?: boolean
+  unplaced?: string[]
+}

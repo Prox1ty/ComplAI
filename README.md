@@ -4,6 +4,10 @@ A policy officer uploads a draft bank policy and states their jurisdiction. Comp
 
 > Decision support for compliance officers, not legal advice. Every finding cites a stored regulatory chunk; findings the verifier cannot support never reach the report.
 
+## Human in the loop
+
+The AI only proposes. In the gap table the reviewer ticks the fixes they accept (or clicks **Apply all fixes**), can **edit any suggested wording** first, and then applies them. ComplAI shows the revised policy with every removal struck through and every addition highlighted, flags fixes it could not apply (for example two fixes rewriting the same clause, so the reviewer can merge them), and exports a **Word file with tracked changes** attributed to "ComplAI". For a Word upload the original document is edited in place, keeping its formatting, so the reviewer can still accept or reject each change in Word. Applying fixes is deterministic code and uses no tokens.
+
 ## How it works
 
 ```
@@ -90,4 +94,6 @@ data/       vectors.sqlite, registry.json, docs.sqlite, runs/{id}/result.json + 
 - `POST /api/runs` — multipart `file`, `country`, `region`, `city`, `timezone`, `policy_type`, `institution_type` → `{ run_id }`
 - `GET /api/runs/{run_id}/events` — SSE `{ phase, status, detail, progress }`; phases `parsing`, `searching`, `analysing`, `verifying`, `suggesting`, `done`, `error`
 - `GET /api/runs/{run_id}/result` — the Result JSON (404 until done)
+- `POST /api/runs/{run_id}/apply` — body `{ fixes: [{ finding_id, text? }] }`; applies the reviewer's chosen (optionally edited) fixes and returns the revised text, changes and skipped fixes
+- `GET /api/runs/{run_id}/revised.docx` / `revised.txt` — downloads (Word with tracked changes)
 - `GET /api/health`

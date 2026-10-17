@@ -1,5 +1,6 @@
 import mockResult from '../../mock/result.json'
-import type { LocationInputs, ProgressEvent, Result } from '../types'
+import type { FixSelection, LocationInputs, ProgressEvent, Result, Revision } from '../types'
+import { applyFixesLocal } from './applyFixes'
 
 export const USE_MOCK = import.meta.env.VITE_USE_MOCK === '1'
 const BASE = (import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '')
@@ -69,6 +70,26 @@ export async function getResult(runId: string, inputs?: LocationInputs): Promise
   const res = await fetch(`${BASE}/api/runs/${runId}/result`)
   if (!res.ok) throw new Error(`Could not load the report (${res.status})`)
   return (await res.json()) as Result
+}
+
+export async function applyFixes(result: Result, fixes: FixSelection[]): Promise<Revision> {
+  if (USE_MOCK) return applyFixesLocal(result, fixes)
+  const res = await fetch(`${BASE}/api/runs/${result.run_id}/apply`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fixes }),
+  })
+  if (!res.ok) {
+    let msg = `Could not apply fixes (${res.status})`
+    try {
+      msg = (await res.json()).detail ?? msg
+    } catch {
+      /* keep default */
+    }
+    throw new Error(msg)
+  }
+  const rev = (await res.json()) as Revision
+  return { ...rev, docx_url: `${BASE}${rev.docx_url}`, txt_url: `${BASE}${rev.txt_url}` }
 }
 
 function simulate(onEvent: (e: ProgressEvent) => void): () => void {

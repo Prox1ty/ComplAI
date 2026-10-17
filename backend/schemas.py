@@ -238,3 +238,41 @@ class Inference(BaseModel):
     text: str
     confidence: float = 0.5
     derived_from: list[str] = Field(default_factory=list)
+
+
+# --------------------------------------------------------------------------
+# Human-in-the-loop: applying reviewer-approved fixes
+# --------------------------------------------------------------------------
+class FixSelection(BaseModel):
+    finding_id: str
+    text: str | None = None  # reviewer-edited wording; None = use the suggestion as is
+
+
+class ApplyRequest(BaseModel):
+    fixes: list[FixSelection] = Field(default_factory=list)
+
+
+class AppliedChange(BaseModel):
+    finding_id: str
+    kind: Literal["replace", "insert"]
+    start: int  # offsets into Revision.full_text
+    end: int
+    old_text: str
+    new_text: str
+
+
+class SkippedFix(BaseModel):
+    finding_id: str | None = None
+    reason: str
+    conflicts_with: str | None = None
+
+
+class Revision(BaseModel):
+    run_id: str
+    full_text: str
+    changes: list[AppliedChange]
+    skipped: list[SkippedFix]
+    docx_url: str
+    txt_url: str
+    docx_from_original: bool = False
+    unplaced: list[str] = Field(default_factory=list)

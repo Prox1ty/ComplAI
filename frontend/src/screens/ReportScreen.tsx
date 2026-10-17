@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { Finding, Result } from '../types'
+import type { Finding, Result, Revision } from '../types'
 import { buildSegments, numberFindings } from '../lib/segments'
 import { jurisdictionLabel } from '../lib/geo'
 import PolicyView from '../components/PolicyView'
 import FindingDetail from '../components/FindingDetail'
 import GapTable from '../components/GapTable'
+import RevisionPanel from '../components/RevisionPanel'
+import { applyFixes } from '../lib/api'
 
 interface Props {
   result: Result
@@ -45,6 +47,53 @@ export default function ReportScreen({ result, onNew }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null)
   const closeTimer = useRef<number>()
   const [popup, setPopup] = useState<Popup | null>(null)
+
+  // Human in the loop: the reviewer picks which fixes to accept and may edit them.
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [edits, setEdits] = useState<Record<string, string>>({})
+  const [revision, setRevision] = useState<Revision | null>(null)
+  const [applying, setApplying] = useState(false)
+  const [applyError, setApplyError] = useState<string | null>(null)
+  const fixable = useMemo(
+    () => result.gap_table.filter((r) => (edits[r.finding_id] ?? r.fix).trim()).map((r) => r.finding_id),
+    [result.gap_table, edits],
+  )
+
+  const toggle = (id: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  const toggleAll = (ids: string[], on: boolean) =>
+    setSelected((prev) => {
+      const next = new Set(prev)
+      ids.forEach((id) => (on ? next.add(id) : next.delete(id)))
+      return next
+    })
+  const editFix = (id: string, text: string | null) =>
+    setEdits((prev) => {
+      const next = { ...prev }
+      if (text === null) delete next[id]
+      else next[id] = text
+      return next
+    })
+  const apply = async (mode: 'all' | 'selected') => {
+    const ids = mode === 'all' ? fixable : fixable.filter((id) => selected.has(id))
+    if (mode === 'all') setSelected(new Set(ids))
+    setApplying(true)
+    setApplyError(null)
+    try {
+      const rev = await applyFixes(result, ids.map((id) => ({ finding_id: id, text: edits[id] ?? null })))
+      setRevision(rev)
+      window.setTimeout(() => document.getElementById('revision')?.scrollIntoView({ behavior: 'smooth' }), 50)
+    } catch (e) {
+      setApplyError((e as Error).message)
+    } finally {
+      setApplying(false)
+    }
+  }
 
   const cancelClose = () => window.clearTimeout(closeTimer.current)
   const scheduleClose = useCallback(() => {
@@ -203,8 +252,38 @@ export default function ReportScreen({ result, onNew }: Props) {
 
       <section className="card no-print">
         <h2>Gap table</h2>
-        <GapTable rows={result.gap_table} numbers={numbers} onRowClick={flashTo} />
+        <p className="muted small no-print hitl-note">
+          You decide what changes: tick the fixes you accept, edit any wording, then apply. Nothing is applied
+          automatically.
+        </p>
+        <GapTable
+          rows={result.gap_table}
+          numbers={numbers}
+          onRowClick={flashTo}
+          review={{
+            selected,
+            edits,
+            onToggle: toggle,
+            onToggleAll: toggleAll,
+            onEdit: editFix,
+            onApply: apply,
+            applying,
+          }}
+        />
+        {applyError && <p className="error-text">{applyError}</p>}
       </section>
+
+      {revision && (
+        <RevisionPanel
+          revision={revision}
+          numbers={numbers}
+          filename={policy.filename}
+          onBack={() => {
+            setRevision(null)
+            window.setTimeout(() => document.querySelector('.gap-table')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
+          }}
+        />
+      )}
 
       <section className="print-only print-findings">
         <h2>Findings</h2>

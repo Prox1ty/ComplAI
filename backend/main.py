@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import uuid
 from pathlib import Path
 
@@ -13,7 +14,8 @@ from fastapi.responses import FileResponse, StreamingResponse
 from backend.config import ROOT, settings
 from backend.orchestrator import Orchestrator, run_fake
 from backend.runs import store
-from backend.schemas import Result, RunInputs
+from backend.schemas import ApplyRequest, Result, Revision, RunInputs
+from backend.tools.apply import apply_fixes, build_docx
 from backend.taxonomy import POLICY_TYPE_TOPICS
 from backend.tools import sse
 from backend.tools.parse import SUPPORTED
@@ -27,6 +29,13 @@ app.add_middleware(
 )
 _tasks: set[asyncio.Task] = set()
 INSTITUTIONS = {"Commercial bank", "Digital bank", "Credit union", "Microfinance", "Other"}
+RUN_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+
+
+def _check_run_id(run_id: str) -> None:
+    """Run ids become folder names; reject anything that is not a plain id (e.g. '..')."""
+    if not RUN_ID_RE.match(run_id) or run_id.strip(".-_") == "":
+        raise HTTPException(404, "Unknown run.")
 
 
 @app.get("/api/health")
@@ -97,6 +106,7 @@ async def create_run(
 
 @app.get("/api/runs/{run_id}/events")
 async def events(run_id: str) -> StreamingResponse:
+    _check_run_id(run_id)
     state = store.get_state(run_id)
     if state is None:
         raise HTTPException(404, "Unknown run.")
@@ -117,11 +127,76 @@ async def events(run_id: str) -> StreamingResponse:
 
 @app.get("/api/runs/{run_id}/result", response_model=Result)
 async def result(run_id: str) -> Result:
+    _check_run_id(run_id)
     r = store.get_result(run_id)
     if r is None:
         raise HTTPException(404, "Result not ready.")
     return r
 
+
+
+# --------------------------------------------------------------------------
+# Human in the loop: the reviewer chooses (and may edit) fixes; we apply them.
+# --------------------------------------------------------------------------
+def _upload_path(run_id: str) -> Path | None:
+    for ext in (".docx", ".pdf", ".txt"):
+        p = settings.runs_dir / run_id / f"upload{ext}"
+        if p.exists():
+            return p
+    return None
+
+
+def _download_name(run_id: str, ext: str) -> str:
+    state = store.get_state(run_id) or {}
+    stem = Path(state.get("filename") or "policy").stem
+    return f"{stem}_revised{ext}"
+
+
+@app.post("/api/runs/{run_id}/apply", response_model=Revision)
+async def apply(run_id: str, req: ApplyRequest) -> Revision:
+    _check_run_id(run_id)
+    r = store.get_result(run_id)
+    if r is None:
+        raise HTTPException(404, "Result not ready.")
+    if not req.fixes:
+        raise HTTPException(422, "Select at least one fix to apply.")
+    rev = apply_fixes(r, [f.model_dump() for f in req.fixes])
+    out_dir = settings.runs_dir / run_id
+    (out_dir / "revised.txt").write_text(rev.full_text, encoding="utf-8")
+    info = await asyncio.to_thread(build_docx, r, rev, _upload_path(run_id), out_dir / "revised.docx")
+    revision = Revision(
+        run_id=run_id,
+        full_text=rev.full_text,
+        changes=[c.__dict__ for c in rev.changes],
+        skipped=rev.skipped,
+        docx_url=f"/api/runs/{run_id}/revised.docx",
+        txt_url=f"/api/runs/{run_id}/revised.txt",
+        docx_from_original=info["from_original"],
+        unplaced=info["unplaced"],
+    )
+    store._write(run_id, "revision.json", {"request": req.model_dump(), "revision": revision.model_dump()})
+    return revision
+
+
+@app.get("/api/runs/{run_id}/revised.docx", include_in_schema=False)
+async def revised_docx(run_id: str) -> FileResponse:
+    _check_run_id(run_id)
+    p = settings.runs_dir / run_id / "revised.docx"
+    if not p.exists():
+        raise HTTPException(404, "Apply fixes first.")
+    return FileResponse(
+        p, filename=_download_name(run_id, ".docx"),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )
+
+
+@app.get("/api/runs/{run_id}/revised.txt", include_in_schema=False)
+async def revised_txt(run_id: str) -> FileResponse:
+    _check_run_id(run_id)
+    p = settings.runs_dir / run_id / "revised.txt"
+    if not p.exists():
+        raise HTTPException(404, "Apply fixes first.")
+    return FileResponse(p, filename=_download_name(run_id, ".txt"), media_type="text/plain; charset=utf-8")
 
 # --------------------------------------------------------------------------
 # Built frontend (production / Docker): served from the same origin as the API.
