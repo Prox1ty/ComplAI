@@ -14,7 +14,7 @@ function handle(p: Person, n: Network): string {
   const url = p[n]
   if (n === 'github') return url.replace(/^https?:\/\/(www\.)?github\.com\//, '@').replace(/\/$/, '')
   if (n === 'linkedin') return url.includes('/in/') ? 'LinkedIn profile' : 'LinkedIn'
-  return 'Discord'
+  return p.discordName ? `@${p.discordName}` : 'Discord profile'
 }
 
 /** One icon per network; opening it lists both teammates. */

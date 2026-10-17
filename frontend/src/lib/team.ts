@@ -6,7 +6,8 @@ export interface Person {
   initials: string
   github: string
   linkedin: string
-  discord: string // a profile link (https://discord.com/users/<id>) or a server invite
+  discord: string // profile link: https://discord.com/users/<numeric user id>
+  discordName: string // shown under the name in the menu
 }
 
 export const TEAM: Person[] = [
@@ -15,13 +16,15 @@ export const TEAM: Person[] = [
     initials: 'MT',
     github: 'https://github.com/Prox1ty',
     linkedin: 'https://www.linkedin.com/feed/',
-    discord: '',
+    discord: 'https://discord.com/users/608649430794764298',
+    discordName: 'prox_109',
   },
   {
     name: 'Muhammad Muizz Sajid',
     initials: 'MS',
     github: 'https://github.com/muizz-sajid',
     linkedin: 'https://www.linkedin.com/in/muhammad-muizz-sajid/',
-    discord: '',
+    discord: 'https://discord.com/users/553869981465706526',
+    discordName: 'dark_phoenix5206',
   },
 ]
