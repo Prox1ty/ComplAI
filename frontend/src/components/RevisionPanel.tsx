@@ -50,8 +50,8 @@ export default function RevisionPanel({ revision, numbers, filename, onBack }: P
           </h2>
           <p className="muted small">
             {replaced} clause{replaced === 1 ? '' : 's'} rewritten, {added} new clause{added === 1 ? '' : 's'} added.
-            Removed wording is struck through; new wording is highlighted. Nothing changes in your original file
-            until you download and accept it.
+            Removed wording is struck through and new wording highlighted here so you can review it; the download
+            contains only the final text.
           </p>
         </div>
         <div className="revision-actions no-print">
@@ -64,7 +64,7 @@ export default function RevisionPanel({ revision, numbers, filename, onBack }: P
             </button>
           ) : (
             <a className="btn primary" href={revision.docx_url} download>
-              Download Word (tracked changes)
+              Download Word
             </a>
           )}
           {USE_MOCK ? (
@@ -100,8 +100,11 @@ export default function RevisionPanel({ revision, numbers, filename, onBack }: P
       )}
       {!USE_MOCK && (
         <p className="muted small">
-          The Word file {revision.docx_from_original ? 'is your original document' : 'is generated from the policy text'}{' '}
-          with each fix as a tracked change by “ComplAI”, so you can still accept or reject every change in Word.
+          The Word file contains only the final wording, with no strikethrough or highlighting.{' '}
+          {revision.docx_from_original
+            ? 'It is your original document with the approved fixes written in, so its formatting is unchanged.'
+            : 'It is generated from the policy text.'}{' '}
+          The marked-up view below is for review only.
         </p>
       )}
 

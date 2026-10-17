@@ -69,16 +69,16 @@ def _count(docx_path: Path) -> tuple[int, int]:
     return xml.count("<w:ins "), xml.count("<w:del ")
 
 
-def test_word_export_generated_from_text(tmp_path):
+def test_word_export_tracked_option_generated_from_text(tmp_path):
     r = mock_result()
     rev = apply_fixes(r, [{"finding_id": "F7"}, {"finding_id": "F9"}])
-    info = build_docx(r, rev, None, tmp_path / "out.docx")
+    info = build_docx(r, rev, None, tmp_path / "out.docx", tracked=True)
     assert info == {"placed": 2, "unplaced": [], "from_original": False}
     ins, dels = _count(tmp_path / "out.docx")
     assert ins >= 3 and dels >= 1  # replacement (del + ins) and a new paragraph (mark + run)
 
 
-def test_word_export_edits_original_docx_in_place(tmp_path):
+def _demo_result():
     src = ROOT / "samples" / "demo_digital_bank_aml_policy.docx"
     text = parse_document(src).text
     clauses = split_clauses(text)
@@ -102,8 +102,13 @@ def test_word_export_edits_original_docx_in_place(tmp_path):
         policy=PolicyDoc(filename=src.name, full_text=text, clauses=clauses), findings=findings, gap_table=[],
         coverage=Coverage(), sources=[], stats=Stats(),
     )
-    rev = apply_fixes(r, [{"finding_id": f.id} for f in findings])
-    info = build_docx(r, rev, src, tmp_path / "rev.docx")
+    return r, src
+
+
+def test_word_export_tracked_option_edits_original_docx(tmp_path):
+    r, src = _demo_result()
+    rev = apply_fixes(r, [{"finding_id": f.id} for f in r.findings])
+    info = build_docx(r, rev, src, tmp_path / "rev.docx", tracked=True)
     assert info["from_original"] and info["unplaced"] == []
 
     import docx
@@ -118,3 +123,23 @@ def test_word_export_edits_original_docx_in_place(tmp_path):
     assert "11. Record Keeping" in headings  # original structure and styles preserved
     ins, dels = _count(tmp_path / "rev.docx")
     assert dels == 2 and ins >= 4
+
+
+def test_word_export_default_is_clean_final_text(tmp_path):
+    import docx
+
+    r, src = _demo_result()
+    rev = apply_fixes(r, [{"finding_id": f.id} for f in r.findings])
+    info = build_docx(r, rev, src, tmp_path / "final.docx")
+    assert info["from_original"] and info["unplaced"] == []
+    d = docx.Document(str(tmp_path / "final.docx"))
+    xml = d.element.body.xml
+    assert "<w:ins " not in xml and "<w:del " not in xml and "w:delText" not in xml  # no tracked changes
+    paras = [p.text for p in d.paragraphs]
+    assert "11.1 The Bank will retain records for at least five years." in paras
+    assert not any("four years" in p for p in paras)  # old wording is gone, not struck through
+    i = next(k for k, p in enumerate(paras) if p.startswith("10.2 Alerts"))
+    assert paras[i + 1] == "10.3 Tipping-off is prohibited."
+    fixed = next(p for p in d.paragraphs if p.text.startswith("11.1 The Bank will retain records"))
+    assert fixed.style.name == "Normal"
+    assert "11. Record Keeping" in [p.text for p in d.paragraphs if p.style.name.startswith("Heading")]

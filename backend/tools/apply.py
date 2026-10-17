@@ -4,10 +4,11 @@ The analysis only *proposes* fixes. A person chooses which ones to accept,
 can edit the wording first, and this module turns those decisions into:
 
 * ``apply_fixes``  -> the revised plain text plus a list of changes (for the UI diff)
-* ``build_docx``   -> a Word file with real **tracked changes** (insertions and
-  deletions attributed to "ComplAI"), so the reviewer can still accept or reject
-  each change in Word. For a Word upload the original file is edited in place,
-  keeping its formatting; other uploads get a generated document.
+* ``build_docx``   -> the final Word document: approved fixes are written straight
+  into the text (no strikethrough, no highlight). For a Word upload the original
+  file is edited in place, keeping its own formatting; other uploads get a
+  generated document. ``tracked=True`` instead records each fix as a Word tracked
+  change by "ComplAI".
 
 No LLM is involved: applying fixes is deterministic and costs no tokens.
 """
@@ -268,8 +269,36 @@ def _generated_document(full_text: str):
     return d
 
 
-def build_docx(result: Result, revision: Revision, source: Path | None, out_path: Path) -> dict:
-    """Write a .docx with tracked changes. Returns counts of placed / unplaced edits."""
+def _plain_run(text: str, template_run=None):
+    """A normal run carrying the original paragraph's character formatting."""
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+
+    r = OxmlElement("w:r")
+    if template_run is not None:
+        rpr = template_run.find(qn("w:rPr"))
+        if rpr is not None:
+            r.append(copy.deepcopy(rpr))
+    t = OxmlElement("w:t")
+    t.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
+    t.text = text
+    r.append(t)
+    return r
+
+
+def _clear_content(paragraph) -> None:
+    """Remove everything in a paragraph except its paragraph properties."""
+    from docx.oxml.ns import qn
+
+    p = paragraph._p
+    for child in list(p):
+        if child.tag != qn("w:pPr"):
+            p.remove(child)
+
+
+def build_docx(result: Result, revision: Revision, source: Path | None, out_path: Path, tracked: bool = False) -> dict:
+    """Write the revised policy as .docx. Clean final text by default; ``tracked``
+    records each fix as a Word tracked change instead. Returns placed / unplaced counts."""
     import docx
 
     use_source = source is not None and source.suffix.lower() == ".docx" and source.exists()
@@ -290,13 +319,22 @@ def build_docx(result: Result, revision: Revision, source: Path | None, out_path
             unplaced.append(e)
             continue
         used.update(idx)
-        for cid in e.clause_ids:
-            clause_paras[cid] = idx
         first = paras[idx[0]]
-        template = first._p.find("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}r")
-        for k, pi in enumerate(idx):
-            _delete_runs(paras[pi], tr, mark_paragraph=k > 0)
-        first._p.append(_inserted_run(e.new_text, tr, template))
+        template = copy.deepcopy(first._p.find("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}r"))
+        if tracked:
+            for cid in e.clause_ids:
+                clause_paras[cid] = idx
+            for k, pi in enumerate(idx):
+                _delete_runs(paras[pi], tr, mark_paragraph=k > 0)
+            first._p.append(_inserted_run(e.new_text, tr, template))
+        else:
+            for cid in e.clause_ids:
+                clause_paras[cid] = idx[:1]
+            _clear_content(first)
+            first._p.append(_plain_run(e.new_text, template))
+            for pi in idx[1:]:  # a clause that spanned several paragraphs collapses into one
+                el = paras[pi]._p
+                el.getparent().remove(el)
 
     # insertions (new clauses for MISSING findings), in reverse so order is preserved
     for e in sorted((e for e in revision.edits if e.kind == "insert"), key=lambda e: -e.start):
@@ -314,21 +352,25 @@ def build_docx(result: Result, revision: Revision, source: Path | None, out_path
             newp.append(copy.deepcopy(ppr))
         ppr = newp.get_or_add_pPr()
         rpr = ppr.find(qn("w:rPr"))
-        if rpr is None:
-            rpr = OxmlElement("w:rPr")
-            ppr.append(rpr)
-        for old in rpr.findall(qn("w:del")):
-            rpr.remove(old)
-        rpr.append(tr.mark("w:ins"))  # the new paragraph mark itself is an insertion
+        if rpr is not None:
+            for old in list(rpr.findall(qn("w:del"))) + list(rpr.findall(qn("w:ins"))):
+                rpr.remove(old)
         template = ap.find(qn("w:r"))
-        newp.append(_inserted_run(e.new_text, tr, template))
+        if tracked:
+            if rpr is None:
+                rpr = OxmlElement("w:rPr")
+                ppr.append(rpr)
+            rpr.append(tr.mark("w:ins"))  # the new paragraph mark itself is an insertion
+            newp.append(_inserted_run(e.new_text, tr, template))
+        else:
+            newp.append(_plain_run(e.new_text, template))
         ap.addnext(newp)
 
     if unplaced:  # e.g. clauses inside tables: list them at the end rather than drop them
-        d.add_heading("Changes ComplAI could not place automatically", level=2)
+        d.add_heading("Additional clauses", level=2)
         for e in unplaced:
             p = d.add_paragraph()
-            p._p.append(_inserted_run(f"[{e.finding_id}] {e.new_text}", tr))
+            p._p.append(_inserted_run(f"[{e.finding_id}] {e.new_text}", tr) if tracked else _plain_run(e.new_text))
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     d.save(str(out_path))
