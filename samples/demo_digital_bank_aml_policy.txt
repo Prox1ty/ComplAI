@@ -1,0 +1,56 @@
+NOVAPAY DIGITAL BANK LIMITED
+ANTI-MONEY LAUNDERING, COUNTER-TERRORIST FINANCING AND SANCTIONS POLICY
+Document reference: COMP-POL-007
+Version 1.2 (Draft for Board Risk Committee)
+Owner: Head of Compliance
+
+1. Purpose and Scope
+1.1 This policy sets out the controls NovaPay Digital Bank Limited ("the Bank") applies to prevent its mobile app, debit cards, wallets and remittance services from being used for money laundering, terrorist financing or sanctions evasion.
+1.2 This policy applies to all employees, contractors and outsourced service providers who onboard customers, process payments or handle customer data on behalf of the Bank.
+
+2. Definitions
+2.1 "Customer" means any natural person or legal entity that opens an account, wallet or card with the Bank through any digital channel.
+2.2 "Politically Exposed Person" or "PEP" means an individual who is or has been entrusted with a prominent public function, and their family members and close associates.
+2.3 "Shell bank" means a bank that has no physical presence in the country in which it is incorporated and licensed, and which is unaffiliated with a regulated financial group.
+
+3. Governance and Compliance Function
+3.1 The Board of Directors approves this policy and receives an annual summary of money laundering risks prepared by the Compliance function.
+3.2 The Head of Compliance reports to the Head of Customer Growth, who is responsible for balancing compliance controls against customer acquisition targets.
+3.3 The effectiveness of the anti-money laundering programme will be reviewed by the Compliance function itself each year; an independent audit is not considered necessary given the Bank's size.
+
+4. Risk Assessment
+4.1 The Bank will carry out an enterprise-wide money laundering risk assessment covering customers, products, delivery channels and geographies, and will update it at least every two years.
+4.2 New products and features, including new payment methods and technologies, may be launched first and assessed for money laundering risk within six months after launch.
+
+5. Customer Due Diligence
+5.1 The Bank will verify the identity of every customer using a valid national identity document, biometric verification and an independent database check before the account is activated.
+5.2 Customers may open a basic wallet using only a mobile number and a self-declared name, and may transact up to the wallet limit without any identity verification for an unlimited period.
+5.3 The Bank will identify the beneficial owners of business customers where any natural person holds 40 percent or more of the ownership interest.
+5.4 Customers will be asked about the purpose and intended nature of the business relationship when this information is easy to obtain during onboarding.
+
+6. Enhanced Due Diligence and Politically Exposed Persons
+6.1 Customers assessed as high risk will be subject to enhanced due diligence, including additional verification of identity, source of funds and more frequent review.
+6.2 PEP accounts may be opened by the onboarding team after standard checks, and the Compliance function will be informed within 30 days.
+
+7. Sanctions Screening
+7.1 The Bank will screen all customers against applicable United Nations and national sanctions lists at onboarding.
+7.2 Where a customer is confirmed as a designated person, the Bank will freeze the related funds once the legal department has completed its review, which may take up to 10 business days.
+
+8. Wire Transfers and Remittances
+8.1 Outgoing international remittances will include the name of the originator; other originator and beneficiary details may be omitted where the payment system does not easily support them.
+
+9. Correspondent Relationships
+9.1 The Bank may establish correspondent relationships with any foreign bank that offers competitive settlement fees, including banks without a physical presence, subject to approval by the Treasury desk.
+
+10. Ongoing Monitoring and Reporting
+10.1 The Bank will use automated transaction monitoring rules to detect unusual patterns such as rapid movement of funds and structuring below reporting thresholds.
+10.2 Alerts will be reviewed by the Compliance team, and suspicious transactions will be reported to the Financial Monitoring Unit within 30 days of the alert being closed.
+
+11. Record Keeping
+11.1 The Bank will retain customer identification records and transaction records for four years after the end of the business relationship or the date of the transaction.
+
+12. Training
+12.1 Staff in customer-facing and compliance roles will complete anti-money laundering training on joining and refresher training every year.
+
+13. Review
+13.1 This policy will be reviewed by the Head of Compliance every three years or earlier if required by a change in law.
