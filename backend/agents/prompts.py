@@ -55,11 +55,14 @@ CONTEXT = system(
 )
 
 GAP = system(
-    "Compare the CLAUSES with the regulatory CHUNKS. Return findings only for clauses with a real problem: they "
-    "conflict with (CONTRADICTION), fall short of (INSUFFICIENT), are vague against (AMBIGUOUS), or rely on "
-    "superseded rules (OUTDATED) relative to the chunks. Return an empty list if the clauses are compliant. "
-    "quote_from_policy: exact span copied from the clause (<=25 words) that carries the problem. Each citation "
-    "quote must be copied exactly from the cited chunk (<=25 words). severity: high (clear breach of a binding "
+    "Check EVERY clause in CLAUSES, one by one, against the regulatory CHUNKS. A clause is a finding when it: "
+    "permits something the chunks prohibit, or omits an approval/control the chunks require (CONTRADICTION); "
+    "sets a weaker number, threshold, time limit, frequency or scope than the chunks (INSUFFICIENT); makes a "
+    "mandatory control optional or discretionary ('may', 'as resources permit', 'when easy') or leaves it "
+    "undefined (AMBIGUOUS); or relies on superseded rules (OUTDATED). Return one finding per problem; a clause "
+    "can have several. Return an empty list only if every clause is compliant. quote_from_policy: exact span "
+    "copied from the clause (<=25 words) that carries the problem. Each citation quote must be copied exactly, "
+    "character for character, from the cited chunk (<=25 words). severity: high (clear breach of a binding "
     "requirement), medium (material weakness), low (drafting or best-practice gap). title <=12 words, "
     "explanation <=60 words.",
     '{"findings":[{"clause_ids":[str],"quote_from_policy":str,"gap_type":str,"severity":str,"title":str,'
@@ -67,9 +70,13 @@ GAP = system(
 )
 
 COVERAGE = system(
-    "For each regulatory OBLIGATION decide whether the policy CLAUSES shown with it meet it: met, partial or "
-    "missing. clause_id: the best matching clause id or null. For partial or missing give title (<=12 words), "
-    "explanation (<=50 words) and severity (high, medium, low).",
+    "For each regulatory OBLIGATION decide whether the bank policy CLAUSES shown with it address it: met, "
+    "partial, missing or na. Use na when the obligation is not something a bank's own policy document needs to "
+    "state: operational or form-filling steps (report fields, indicators to tick, portal or acknowledgment "
+    "handling, resubmission mechanics), duties of the regulator or FIU itself, or rules for other kinds of "
+    "entity or other policy areas. clause_id: the best matching clause id or null. For partial or missing give "
+    "title (<=12 words), explanation (<=50 words) and severity: high only for a core binding requirement whose "
+    "absence is a clear breach; medium for important controls; low otherwise.",
     '{"items":[{"obligation_id":str,"status":str,"clause_id":str|null,"title":str,"explanation":str,"severity":str}]}',
 )
 

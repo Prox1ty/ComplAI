@@ -25,10 +25,11 @@ from backend.tools.registry import get_registry
 MAX_TOKENS = 1500
 COVERAGE_MAX_TOKENS = 1200
 CHUNK_CHAR_CAP = 1800  # ~450 tokens
-GROUP_MAX = 5
+GROUP_MAX = 4
+PER_CLAUSE_K = 3
 COVERAGE_BATCH = 10
 MAX_OBLIGATIONS = 60
-MAX_MISSING = 8
+MAX_MISSING = 5
 GAP_TYPES = {"CONTRADICTION", "INSUFFICIENT", "AMBIGUOUS", "OUTDATED"}
 
 
@@ -83,6 +84,7 @@ class CoverageResult:
     met: int = 0
     partial: int = 0
     missing: int = 0
+    not_applicable: int = 0
     drafts: list[Draft] = field(default_factory=list)
 
 
@@ -178,10 +180,32 @@ def _build_draft(ctx: RunContext, raw: _Finding, group: list[Clause], hits: dict
     return Draft(finding=f, seen_chunks=set(hits), query=query, topics=topics)
 
 
+def retrieve_for_group(ctx: RunContext, group: list[Clause], k: int, exclude: set[str] | None = None) -> list[Hit]:
+    """Retrieve per clause, then merge round-robin so every clause gets its own best evidence.
+
+    One query built from 3-5 concatenated clauses blurs into a generic AML
+    vector and misses the specific rule each clause needs. Document-level topic
+    tags are too coarse to filter on (they hid the main regulation from whole
+    groups), so retrieval is filtered by jurisdiction only and ranked by the
+    clause text itself.
+    """
+    per_clause = [
+        vs.hybrid_search(vs.FACTS, c.text, {"jurisdiction": ctx.chain}, k=PER_CLAUSE_K, exclude_ids=exclude)
+        for c in group
+    ]
+    hits: list[Hit] = []
+    seen: set[str] = set()
+    for rank in range(PER_CLAUSE_K):
+        for lst in per_clause:
+            if rank < len(lst) and lst[rank].id not in seen and len(hits) < k:
+                seen.add(lst[rank].id)
+                hits.append(lst[rank])
+    return hits
+
+
 async def _review_group(ctx: RunContext, group: list[Clause], k: int, exclude: set[str] | None = None) -> list[Draft]:
     query = " ".join(c.text for c in group)[:1500]
-    topics = sorted({t for c in group for t in getattr(ctx.tags.get(c.id), "topics", []) if t != "other"})
-    hits = vs.hybrid_search(vs.FACTS, query, {"jurisdiction": ctx.chain, "topics": topics}, k=k, exclude_ids=exclude)
+    hits = retrieve_for_group(ctx, group, k, exclude)
     if not hits:
         ctx.log("skipped", step="gap", clauses=[c.id for c in group], reason="no regulatory chunks retrieved")
         return []
@@ -256,17 +280,39 @@ def _section_end(ctx: RunContext, clause_id: str | None) -> tuple[int, str | Non
     return max(x.end for x in same), c.section
 
 
-async def pass_b(ctx: RunContext) -> CoverageResult:
-    topics = set(ctx.profile.topics)
-    obligations: list[Obligation] = []
+def select_obligations(ctx: RunContext, topics: set[str]) -> list[Obligation]:
+    """Pick the obligations to check, fairly across documents.
+
+    Taking them in document order let one long procedural guideline fill the
+    whole budget. Instead: binding (must/prohibition) obligations first, then
+    round-robin across documents so each regulation is represented.
+    """
+    cap = MAX_OBLIGATIONS // 2 if ctx.reduced else MAX_OBLIGATIONS
+    per_doc: list[list[Obligation]] = []
     seen_text: set[str] = set()
     for d in ctx.docs:
+        items = []
         for o in load_obligations(d.doc_id) or []:
             key = " ".join(o.text.lower().split())
             if (not topics or o.topic in topics) and key not in seen_text:
                 seen_text.add(key)
-                obligations.append(o)
-    obligations = obligations[: (MAX_OBLIGATIONS // 2 if ctx.reduced else MAX_OBLIGATIONS)]
+                items.append(o)
+        items.sort(key=lambda o: 0 if o.modality in ("must", "prohibition") else 1)  # stable: keeps doc order
+        if items:
+            per_doc.append(items)
+    out: list[Obligation] = []
+    i = 0
+    while len(out) < cap and any(i < len(lst) for lst in per_doc):
+        for lst in per_doc:
+            if i < len(lst) and len(out) < cap:
+                out.append(lst[i])
+        i += 1
+    return out
+
+
+async def pass_b(ctx: RunContext) -> CoverageResult:
+    topics = set(ctx.profile.topics)
+    obligations = select_obligations(ctx, topics)
     res = CoverageResult(total=len(obligations))
     if not obligations:
         return res
@@ -322,8 +368,11 @@ async def pass_b(ctx: RunContext) -> CoverageResult:
             if o is None or o.id in answered or o not in batch:
                 continue
             answered.add(o.id)
-            st = it.status.lower().strip()
-            if st == "met":
+            st = it.status.lower().strip().replace("/", "").replace("_", "").replace(" ", "")
+            if st in ("na", "notapplicable"):
+                res.total -= 1  # procedural or not a bank-policy obligation: out of scope
+                res.not_applicable += 1
+            elif st == "met":
                 res.met += 1
             elif st == "missing":
                 res.missing += 1
